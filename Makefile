@@ -23,7 +23,7 @@ release: build
 		-H "Authorization: Bearer $(github_token)" \
 		-H "X-GitHub-Api-Version: 2022-11-28" \
 		https://api.github.com/repos/$(REPO_OWNER)/$(REPO_NAME)/releases \
-	  	-d '{"tag_name":"v$(VERSION)","target_commitish":"master","name":"v$(VERSION)"}' | jq .id))
+	  	-d '{"tag_name":"$(VERSION)","name":"$(VERSION)"}' | jq .id))
 	@curl -X POST \
 		-H "Accept: application/vnd.github+json" \
 		-H "Authorization: Bearer $(github_token)" \
