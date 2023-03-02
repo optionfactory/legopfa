@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-acme/lego/v4/log"
 	"github.com/optionfactory/legopfa/certmanager"
+	"github.com/optionfactory/legopfa/dnsupdaters"
 	"github.com/optionfactory/legopfa/httpserverhandlers"
 )
 
@@ -31,6 +32,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
+	httpServerHandler, err := httpserverhandlers.ByName(configuration.HttpServerHandler)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+	isHttpServerRunning := httpServerHandler.IsRunning()
+	log.Infof("http server is running: %v", isHttpServerRunning)
+	if !isHttpServerRunning && len(configuration.DnsRecordsToUpdate) > 0 {
+		log.Infof("updating dns records: %v", configuration.DnsRecordsToUpdate)
+		err = dnsupdaters.FromConfiguration(configuration).Update()
+		if err != nil {
+			log.Fatalf("error: %v", err)
+		}
+		log.Infof("dns records updated")
+	}
 	needsCreationOrRenewal, daysUntilExpiration, err := cm.NeedsCreationOrRenewal()
 	if err != nil {
 		log.Fatalf("error: %v", err)
@@ -44,12 +59,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
-	httpServerHandler, err := httpserverhandlers.ByName(configuration.HttpServerHandler)
-	if err != nil {
-		log.Fatalf("error: %v", err)
-	}
-	isHttpServerRunning := httpServerHandler.IsRunning()
-	log.Infof("http server is running: %v", isHttpServerRunning)
 	client, err := cm.CreateClient(account, isHttpServerRunning)
 	if err != nil {
 		log.Fatalf("error: %v", err)

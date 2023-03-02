@@ -21,16 +21,22 @@ import (
 	"github.com/go-acme/lego/v4/registration"
 )
 
+type DnsRecord struct {
+	Domain string `json:"domain"`
+	Name   string `json:"name"`
+}
+
 type Configuration struct {
-	KeyType           certcrypto.KeyType `json:"key_type"`
-	Email             string             `json:"email"`
-	Domains           []string           `json:"domains"`
-	ProviderType      string             `json:"provider_type"`
-	HttpServerHandler string             `json:"http_server_handler"`
-	DnsClientId       string             `json:"dns_client_id"`
-	DnsClientSecret   string             `json:"dns_client_secret"`
-	DnsRegion         string             `json:"dns_region"`
-	StoragePath       string             `json:"storage_path"`
+	KeyType            certcrypto.KeyType `json:"key_type"`
+	Email              string             `json:"email"`
+	Domains            []string           `json:"domains"`
+	ProviderType       string             `json:"provider_type"`
+	HttpServerHandler  string             `json:"http_server_handler"`
+	DnsClientId        string             `json:"dns_client_id"`
+	DnsClientSecret    string             `json:"dns_client_secret"`
+	DnsRegion          string             `json:"dns_region"`
+	DnsRecordsToUpdate []DnsRecord        `json:"dns_records_to_update"`
+	StoragePath        string             `json:"storage_path"`
 }
 
 type LegoAccount struct {
@@ -89,6 +95,9 @@ func MakeCertManager(conf *Configuration) (*CertManager, error) {
 	}
 	if len(conf.Domains) == 0 {
 		return nil, fmt.Errorf("domains must be a non empty array")
+	}
+	if len(conf.DnsRecordsToUpdate) != 0 && conf.ProviderType != "gandi" && conf.ProviderType != "route53" {
+		return nil, fmt.Errorf("dns_records can be configured only with dns providers")
 	}
 	if conf.Email == "" {
 		return nil, fmt.Errorf("email must be configured")
