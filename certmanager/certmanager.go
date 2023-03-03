@@ -35,6 +35,7 @@ type Configuration struct {
 	DnsClientId        string             `json:"dns_client_id"`
 	DnsClientSecret    string             `json:"dns_client_secret"`
 	DnsRegion          string             `json:"dns_region"`
+	DnsHostedZoneId    string             `json:"dns_hosted_zone_id"`
 	DnsRecordsToUpdate []DnsRecord        `json:"dns_records_to_update"`
 	StoragePath        string             `json:"storage_path"`
 }
@@ -98,6 +99,9 @@ func MakeCertManager(conf *Configuration) (*CertManager, error) {
 	}
 	if len(conf.DnsRecordsToUpdate) != 0 && conf.ProviderType != "gandi" && conf.ProviderType != "route53" {
 		return nil, fmt.Errorf("dns_records can be configured only with dns providers")
+	}
+	if len(conf.DnsRecordsToUpdate) != 0 && conf.ProviderType != "route53" && conf.DnsHostedZoneId == "" {
+		return nil, fmt.Errorf("dns_hosted_zone_id is required when dns_records_to_update is configured with route53")
 	}
 	if conf.Email == "" {
 		return nil, fmt.Errorf("email must be configured")

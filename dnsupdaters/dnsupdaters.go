@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/optionfactory/legopfa/certmanager"
 	"io"
 	"net"
@@ -44,6 +48,7 @@ func FromConfiguration(conf *certmanager.Configuration) DnsUpdater {
 		ClientId:     conf.DnsClientId,
 		ClientSecret: conf.DnsClientSecret,
 		Region:       conf.DnsRegion,
+		HostedZoneId: conf.DnsHostedZoneId,
 		Records:      conf.DnsRecordsToUpdate,
 	}
 }
@@ -100,11 +105,47 @@ type Route53DnsUpdater struct {
 	ClientId     string
 	ClientSecret string
 	Region       string
+	HostedZoneId string
 	Records      []certmanager.DnsRecord
 }
 
 func (self *Route53DnsUpdater) Update() error {
-	return fmt.Errorf("Route53DnsUpdater is not supported yet")
+	ip, err := myPublicIp(self.HttpClient)
+	if err != nil {
+		return err
+	}
+	config := &aws.Config{
+		Credentials: credentials.NewStaticCredentials(self.ClientId, self.ClientSecret, ""),
+		Region:      &self.Region,
+	}
+	session, err := session.NewSession(config)
+	if err != nil {
+		return err
+	}
+	route53Client := route53.New(session)
+	for _, record := range self.Records {
+		_, err := route53Client.ChangeResourceRecordSets(&route53.ChangeResourceRecordSetsInput{
+			HostedZoneId: aws.String(self.HostedZoneId),
+			ChangeBatch: &route53.ChangeBatch{
+				Changes: []*route53.Change{{
+					Action: aws.String("UPSERT"),
+					ResourceRecordSet: &route53.ResourceRecordSet{
+						Name: aws.String(fmt.Sprintf("%s.%s", record.Domain, record.Name)),
+						Type: aws.String("A"),
+						TTL:  aws.Int64(60),
+						ResourceRecords: []*route53.ResourceRecord{{
+							Value: aws.String(ip),
+						}},
+						//SetIdentifier:  aws.String("Arbitrary Id describing this change set"),
+					},
+				}},
+			},
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func myPublicIp(httpClient *http.Client) (string, error) {
