@@ -27,17 +27,18 @@ type DnsRecord struct {
 }
 
 type Configuration struct {
-	KeyType            certcrypto.KeyType `json:"key_type"`
-	Email              string             `json:"email"`
-	Domains            []string           `json:"domains"`
-	ProviderType       string             `json:"provider_type"`
-	HttpServerHandler  string             `json:"http_server_handler"`
-	DnsClientId        string             `json:"dns_client_id"`
-	DnsClientSecret    string             `json:"dns_client_secret"`
-	DnsRegion          string             `json:"dns_region"`
-	DnsHostedZoneId    string             `json:"dns_hosted_zone_id"`
-	DnsRecordsToUpdate []DnsRecord        `json:"dns_records_to_update"`
-	StoragePath        string             `json:"storage_path"`
+	KeyType             certcrypto.KeyType `json:"key_type"`
+	Email               string             `json:"email"`
+	Domains             []string           `json:"domains"`
+	ProviderType        string             `json:"provider_type"`
+	HttpServerHandler   string             `json:"http_server_handler"`
+	HttpUpstramBindPort string             `json:"http_upstream_bind_port"`
+	DnsClientId         string             `json:"dns_client_id"`
+	DnsClientSecret     string             `json:"dns_client_secret"`
+	DnsRegion           string             `json:"dns_region"`
+	DnsHostedZoneId     string             `json:"dns_hosted_zone_id"`
+	DnsRecordsToUpdate  []DnsRecord        `json:"dns_records_to_update"`
+	StoragePath         string             `json:"storage_path"`
 }
 
 type LegoAccount struct {
@@ -184,7 +185,11 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		port := "80"
 		bindAsUpstream := reverseProxyIsRunning && self.Configuration.ProviderType == "http_reverse_proxy"
 		if bindAsUpstream {
-			port = "8888"
+			if self.Configuration.HttpUpstramBindPort != "" {
+				port = self.Configuration.HttpUpstramBindPort
+			} else {
+				port = "8888"
+			}
 		}
 		srv := http01.NewProviderServer("", port)
 		err := client.Challenge.SetHTTP01Provider(srv)
