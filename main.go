@@ -28,6 +28,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
+	if len(configuration.Domains) == 0 {
+		log.Infof("no domains found in configuration.")
+		log.Infof("done.")
+		return
+	}
 	cm, err := certmanager.MakeCertManager(configuration)
 	if err != nil {
 		log.Fatalf("error: %v", err)
