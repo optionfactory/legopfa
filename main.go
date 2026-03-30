@@ -36,6 +36,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
+	needsCreationOrRenewal, daysUntilExpiration, err := cm.NeedsCreationOrRenewal()
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+	if !needsCreationOrRenewal {
+		log.Infof("certificate expires in %d days, threshold is 30 days: no renewal.", daysUntilExpiration)
+		log.Infof("done.")
+		return
+	}
 	isHttpServerRunning := httpServerHandler.IsRunning()
 	log.Infof("http server is running: %v", isHttpServerRunning)
 	if !isHttpServerRunning && len(configuration.DnsRecordsToUpdate) > 0 {
@@ -45,15 +54,6 @@ func main() {
 			log.Fatalf("error: %v", err)
 		}
 		log.Infof("dns records updated")
-	}
-	needsCreationOrRenewal, daysUntilExpiration, err := cm.NeedsCreationOrRenewal()
-	if err != nil {
-		log.Fatalf("error: %v", err)
-	}
-	if !needsCreationOrRenewal {
-		log.Infof("certificate expires in %d days, threshold is 30 days: no renewal.", daysUntilExpiration)
-		log.Infof("done.")
-		return
 	}
 	account, err := cm.CreateAccount()
 	if err != nil {
