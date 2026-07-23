@@ -1,4 +1,4 @@
-VERSION=1.6-dev
+VERSION=1.6
 REPO_OWNER=optionfactory
 REPO_NAME=legopfa
 
@@ -15,7 +15,7 @@ build:
 clean:
 	rm -rf legopfa
 
-publish-github: build-release
+publish-github: build
 	$(eval github_token=$(shell echo url=https://github.com/$(REPO_OWNER)/$(REPO_NAME) | git credential fill | grep '^password=' | sed 's/password=//'))
 	$(eval release_id=$(shell curl -s -X POST \
 		-H "Accept: application/vnd.github+json" \
