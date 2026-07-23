@@ -1,6 +1,7 @@
 package certmanager
 
 import (
+	"context"
 	"crypto"
 	"crypto/x509"
 	"fmt"
@@ -11,14 +12,15 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-acme/lego/v4/acme/api"
-	"github.com/go-acme/lego/v4/certcrypto"
-	"github.com/go-acme/lego/v4/certificate"
-	"github.com/go-acme/lego/v4/challenge/http01"
-	"github.com/go-acme/lego/v4/lego"
-	"github.com/go-acme/lego/v4/providers/dns/gandiv5"
-	"github.com/go-acme/lego/v4/providers/dns/route53"
-	"github.com/go-acme/lego/v4/registration"
+	"github.com/go-acme/lego/v5/acme"
+	"github.com/go-acme/lego/v5/acme/api"
+	"github.com/go-acme/lego/v5/certcrypto"
+	"github.com/go-acme/lego/v5/certificate"
+	"github.com/go-acme/lego/v5/challenge/http01"
+	"github.com/go-acme/lego/v5/lego"
+	"github.com/go-acme/lego/v5/providers/dns/gandiv5"
+	"github.com/go-acme/lego/v5/providers/dns/route53"
+	"github.com/go-acme/lego/v5/registration"
 )
 
 type DnsRecord struct {
@@ -42,20 +44,20 @@ type Configuration struct {
 }
 
 type LegoAccount struct {
-	email        string
-	registration *registration.Resource
-	key          crypto.PrivateKey
+	email            string
+	registrationInfo *acme.ExtendedAccount
+	key              crypto.Signer
 }
 
 func (self *LegoAccount) GetEmail() string {
 	return self.email
 }
 
-func (self *LegoAccount) GetRegistration() *registration.Resource {
-	return self.registration
-
+func (self *LegoAccount) GetRegistration() *acme.ExtendedAccount {
+	return self.registrationInfo
 }
-func (self *LegoAccount) GetPrivateKey() crypto.PrivateKey {
+
+func (self *LegoAccount) GetPrivateKey() crypto.Signer {
 	return self.key
 }
 
@@ -148,30 +150,32 @@ func (self *CertManager) CreateAccount() (*LegoAccount, error) {
 			ResponseHeaderTimeout: 30 * time.Second,
 		},
 	}
-	coreApi, err := api.New(httpClient, useragent, lego.LEDirectoryProduction, "", key)
+
+	coreApi, err := api.New(httpClient, useragent, "https://acme-v02.api.letsencrypt.org/directory", "", key.(crypto.Signer))
 	if err != nil {
 		return nil, fmt.Errorf("Could not complete registration: %v", err)
 	}
 	accountWithoutRegistration := &LegoAccount{
 		email: self.Configuration.Email,
-		key:   key,
+		key:   key.(crypto.Signer),
 	}
+
+	// 'registration' now directly refers to the package, and 'reg' to the variable
 	regClient := registration.NewRegistrar(coreApi, accountWithoutRegistration)
-	registration, err := regClient.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
+	reg, err := regClient.Register(context.Background(), registration.RegisterOptions{TermsOfServiceAgreed: true})
 	if err != nil {
 		return nil, fmt.Errorf("Could not complete registration: %v", err)
 	}
 	return &LegoAccount{
-		email:        self.Configuration.Email,
-		registration: registration,
-		key:          key,
+		email:            self.Configuration.Email,
+		registrationInfo: reg, // Now correctly maps to *acme.ExtendedAccount
+		key:              key.(crypto.Signer),
 	}, nil
 }
 
 func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunning bool) (*lego.Client, error) {
 	config := lego.NewConfig(account)
 	config.Certificate = lego.CertificateConfig{
-		KeyType: self.Configuration.KeyType,
 		Timeout: time.Duration(30) * time.Second,
 	}
 	config.UserAgent = useragent
@@ -196,9 +200,6 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		if err != nil {
 			return nil, err
 		}
-		if bindAsUpstream {
-			srv.SetProxyHeader("X-Forwarded-Host")
-		}
 		return client, nil
 	}
 	if self.Configuration.ProviderType == "route53" {
@@ -207,13 +208,13 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 			SecretAccessKey:    self.Configuration.DnsClientSecret,
 			SessionToken:       "",
 			Region:             self.Configuration.DnsRegion,
-			HostedZoneID:       "", //detected if not supplied
+			HostedZoneID:       "",
 			MaxRetries:         5,
 			AssumeRoleArn:      "",
 			TTL:                10,
 			PropagationTimeout: 2 * time.Minute,
 			PollingInterval:    4 * time.Second,
-			Client:             nil, //created if not suppplied
+			Client:             nil,
 		}
 		provider, err := route53.NewDNSProviderConfig(route53Config)
 		if err != nil {
@@ -269,15 +270,16 @@ func (self *CertManager) CreateOrRenewCertificate(client *lego.Client) error {
 	request := certificate.ObtainRequest{
 		Domains:                        self.Configuration.Domains,
 		Bundle:                         true,
+		KeyType:                        self.Configuration.KeyType,
 		MustStaple:                     false,
 		PreferredChain:                 "",
 		AlwaysDeactivateAuthorizations: false,
 	}
-	cert, err := client.Certificate.Obtain(request)
+	cert, err := client.Certificate.Obtain(context.Background(), request)
 	if err != nil {
 		return fmt.Errorf("Could not obtain certificates: %v", err)
 	}
-	err = saveCertificates(self.Configuration.StoragePath, cert)
+	err = saveCertificates(self.Configuration.StoragePath, cert, self.Configuration.Domains[0])
 	if err != nil {
 		return fmt.Errorf("Error saving certificates: %v", err)
 	}
@@ -327,14 +329,14 @@ func loadCertificate(basePath string) (*x509.Certificate, error) {
 	return certificates[0], nil
 }
 
-func saveCertificates(basePath string, cert *certificate.Resource) error {
+func saveCertificates(basePath string, cert *certificate.Resource, domain string) error {
 	err := os.WriteFile(filepath.Join(basePath, "server.crt"), cert.Certificate, certFilesPerm)
 	if err != nil {
-		return fmt.Errorf("Unable to save server.crt for domain %s: %v", cert.Domain, err)
+		return fmt.Errorf("Unable to save server.crt for domain %s: %v", domain, err)
 	}
 	err = os.WriteFile(filepath.Join(basePath, "server.key"), cert.PrivateKey, certFilesPerm)
 	if err != nil {
-		return fmt.Errorf("Unable to save server.key for domain %s: %v", cert.Domain, err)
+		return fmt.Errorf("Unable to save server.key for domain %s: %v", domain, err)
 	}
 	return nil
 }
