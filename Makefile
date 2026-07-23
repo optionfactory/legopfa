@@ -1,4 +1,4 @@
-VERSION=1.6-dev
+VERSION=1.6
 REPO_OWNER=optionfactory
 REPO_NAME=legopfa
 
@@ -15,7 +15,7 @@ build:
 clean:
 	rm -rf legopfa
 
-publish-github: build-release
+publish-github: build
 	$(eval github_token=$(shell echo url=https://github.com/$(REPO_OWNER)/$(REPO_NAME) | git credential fill | grep '^password=' | sed 's/password=//'))
 	$(eval release_id=$(shell curl -s -X POST \
 		-H "Accept: application/vnd.github+json" \
@@ -28,5 +28,5 @@ publish-github: build-release
 		-H "Authorization: Bearer $(github_token)" \
 		-H "X-GitHub-Api-Version: 2022-11-28" \
 		-H "Content-Type: application/octet-stream" \
-		"https://uploads.github.com/repos/$(REPO_OWNER)/$(REPO_NAME)/releases/$(release_id)/assets?name=$(REPO_NAME)-amd64-linux-musl" \
+		"https://uploads.github.com/repos/$(REPO_OWNER)/$(REPO_NAME)/releases/$(release_id)/assets?name=$(REPO_NAME)-linux-amd64" \
   		--data-binary "@legopfa"
