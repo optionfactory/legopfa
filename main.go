@@ -82,7 +82,8 @@ func main() {
 }
 
 func loadJson[K any](path string) (*K, error) {
-	file, err := os.Open(path)
+	cleanPath := filepath.Clean(path)
+	file, err := os.Open(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("Could not deserialize %s: %v", path, err)
 	}

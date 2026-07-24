@@ -342,8 +342,9 @@ func loadCertificate(basePath string) (*x509.Certificate, error) {
 }
 
 func saveCertificates(basePath string, cert *certificate.Resource, domain string) error {
-	crtPath := filepath.Join(basePath, "server.crt")
-	keyPath := filepath.Join(basePath, "server.key")
+	cleanBase := filepath.Clean(basePath)
+	crtPath := filepath.Join(cleanBase, "server.crt")
+	keyPath := filepath.Join(cleanBase, "server.key")
 	crtTmpPath := crtPath + ".tmp"
 	keyTmpPath := keyPath + ".tmp"
 

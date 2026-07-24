@@ -13,6 +13,14 @@ build:
 clean:
 	rm -rf legopfa
 
+
+check-deps:
+	#go install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck -show verbose  ./...
+	#go install github.com/securego/gosec/v2/cmd/gosec@latest
+	gosec ./...
+
+
 publish-github: build
 	$(eval github_token=$(shell echo url=https://github.com/$(REPO_OWNER)/$(REPO_NAME) | git credential fill | grep '^password=' | sed 's/password=//'))
 	$(eval release_id=$(shell curl -s -X POST \
