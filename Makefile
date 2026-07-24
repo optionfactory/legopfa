@@ -1,4 +1,4 @@
-VERSION=2.0-dev
+VERSION=2.0
 REPO_OWNER=optionfactory
 REPO_NAME=legopfa
 
@@ -14,11 +14,13 @@ clean:
 	rm -rf legopfa
 
 
-check-deps:
+check-updates:
 	#go install golang.org/x/vuln/cmd/govulncheck@latest
-	govulncheck -show verbose  ./...
+	-@govulncheck -show verbose  ./...
 	#go install github.com/securego/gosec/v2/cmd/gosec@latest
-	gosec ./...
+	-@gosec ./...
+	@echo Available direct updates
+	@go list -u -m -f '{{if and (not .Indirect) .Update}}{{.Path}}: {{.Version}} -> {{.Update.Version}}{{end}}' all
 
 
 publish-github: build

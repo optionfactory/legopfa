@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-acme/lego/v5/acme"
@@ -23,11 +25,6 @@ import (
 	"github.com/go-acme/lego/v5/providers/dns/route53"
 	"github.com/go-acme/lego/v5/registration"
 )
-
-type DnsRecord struct {
-	Domain string `json:"domain"`
-	Name   string `json:"name"`
-}
 
 type Configuration struct {
 	KeyType              certcrypto.KeyType `json:"key_type"`
@@ -69,31 +66,38 @@ type CertManager struct {
 const useragent string = "legopfa"
 
 func MakeCertManager(conf *Configuration) (*CertManager, error) {
-	supportedKeyTypes := []string{
-		"P256",
-		"P384",
-		"2048",
-		"4096",
-		"8192",
+	supportedKeyTypes := []certcrypto.KeyType{
+		certcrypto.EC256,
+		certcrypto.EC384,
+		certcrypto.RSA2048,
+		certcrypto.RSA3072,
+		certcrypto.RSA4096,
+		certcrypto.RSA8192,
 	}
 	supportedProviders := []string{
 		"http",
 		"http_reverse_proxy",
 		"gandi",
+		"cloudflare",
 		"route53",
 	}
 	supportedHttpServerHandlers := []string{
+		"",
 		"none",
 		"nginx",
 	}
-	if !contains(supportedKeyTypes, string(conf.KeyType)) {
+
+	if !slices.Contains(supportedKeyTypes, certcrypto.KeyType(conf.KeyType)) {
 		return nil, fmt.Errorf("invalid key_type in configuration: expected one of: %v, got '%s'", supportedKeyTypes, conf.KeyType)
 	}
-	if !contains(supportedProviders, string(conf.ProviderType)) {
+	if !slices.Contains(supportedProviders, string(conf.ProviderType)) {
 		return nil, fmt.Errorf("invalid provider_type in configuration: expected one of: %v, got '%s'", supportedProviders, conf.ProviderType)
 	}
-	if !contains(supportedHttpServerHandlers, conf.HttpServerHandler) {
+	if !slices.Contains(supportedHttpServerHandlers, conf.HttpServerHandler) {
 		return nil, fmt.Errorf("invalid http_server_handler in configuration: expected one of: %v, got '%s'", supportedHttpServerHandlers, conf.HttpServerHandler)
+	}
+	if conf.HttpServerHandler == "" {
+		conf.HttpServerHandler = "none"
 	}
 	if conf.StoragePath == "" {
 		return nil, fmt.Errorf("storage_path must be configured")
@@ -113,17 +117,32 @@ func MakeCertManager(conf *Configuration) (*CertManager, error) {
 			return nil, fmt.Errorf("invalid http_upstream_bind_port: must be a valid port number between 1 and 65535")
 		}
 	}
-	if conf.ProviderType == "cloudflare" {
+
+	if conf.DnsClientSecret != "" {
+		s, err := source(conf.DnsClientSecret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve dns_client_secret: %w", err)
+		}
+		conf.DnsClientSecret = s
+	}
+	if conf.DnsClientId != "" {
+		s, err := source(conf.DnsClientId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve dns_client_id: %w", err)
+		}
+		conf.DnsClientId = s
+	}
+
+	switch conf.ProviderType {
+	case "cloudflare":
 		if conf.DnsClientSecret == "" {
 			return nil, fmt.Errorf("dns_client_secret must be provided when using the cloudflare provider_type (containing the CLOUDFLARE_DNS_API_TOKEN)")
 		}
-	}
-	if conf.ProviderType == "gandi" {
+	case "gandi":
 		if conf.DnsClientSecret == "" {
 			return nil, fmt.Errorf("dns_client_secret must be provided when using the gandi provider_type (containing the personal access token)")
 		}
-	}
-	if conf.ProviderType == "route53" {
+	case "route53":
 		if conf.DnsClientId == "" {
 			return nil, fmt.Errorf("dns_client_id must be provided when using the route53 provider_type")
 		}
@@ -134,13 +153,12 @@ func MakeCertManager(conf *Configuration) (*CertManager, error) {
 			return nil, fmt.Errorf("dns_region must be provided when using the route53 provider_type")
 		}
 	}
+
 	if conf.AcmeDirectoryUrl == "" {
 		conf.AcmeDirectoryUrl = "https://acme-v02.api.letsencrypt.org/directory"
 	}
-	cm := &CertManager{
-		Configuration: conf,
-	}
-	return cm, nil
+
+	return &CertManager{Configuration: conf}, nil
 }
 
 func (self *CertManager) CreateAccount() (*LegoAccount, error) {
@@ -162,7 +180,7 @@ func (self *CertManager) CreateAccount() (*LegoAccount, error) {
 
 	coreApi, err := api.New(httpClient, useragent, self.Configuration.AcmeDirectoryUrl, "", key)
 	if err != nil {
-		return nil, fmt.Errorf("Could not complete registration: %v", err)
+		return nil, fmt.Errorf("Could not complete registration: %w", err)
 	}
 	accountWithoutRegistration := &LegoAccount{
 		email: self.Configuration.Email,
@@ -172,13 +190,17 @@ func (self *CertManager) CreateAccount() (*LegoAccount, error) {
 	regClient := registration.NewRegistrar(coreApi, accountWithoutRegistration)
 	reg, err := regClient.Register(context.Background(), registration.RegisterOptions{TermsOfServiceAgreed: true})
 	if err != nil {
-		return nil, fmt.Errorf("Could not complete registration: %v", err)
+		return nil, fmt.Errorf("Could not complete registration: %w", err)
 	}
 	return &LegoAccount{
 		email:            self.Configuration.Email,
 		registrationInfo: reg,
 		key:              key,
 	}, nil
+}
+
+func (self *CertManager) UsesReverseProxy() bool {
+	return self.Configuration.ProviderType == "http_reverse_proxy"
 }
 
 func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunning bool) (*lego.Client, error) {
@@ -266,7 +288,7 @@ func (self *CertManager) NeedsCreationOrRenewal() (bool, int, error) {
 	}
 	if oldCert != nil {
 		oldCertDomains := certcrypto.ExtractDomains(oldCert)
-		sameDomains := stringSliceEquals(oldCertDomains, self.Configuration.Domains)
+		sameDomains := domainsMatch(oldCertDomains, self.Configuration.Domains)
 		daysUntilExpiration := int(time.Until(oldCert.NotAfter).Hours() / 24.0)
 		if sameDomains && daysUntilExpiration > 30 {
 			return false, daysUntilExpiration, nil
@@ -289,34 +311,24 @@ func (self *CertManager) CreateOrRenewCertificate(client *lego.Client) error {
 	}
 	cert, err := client.Certificate.Obtain(context.Background(), request)
 	if err != nil {
-		return fmt.Errorf("Could not obtain certificates: %v", err)
+		return fmt.Errorf("Could not obtain certificates: %w", err)
 	}
 	err = saveCertificates(self.Configuration.StoragePath, cert, self.Configuration.Domains[0])
 	if err != nil {
-		return fmt.Errorf("Error saving certificates: %v", err)
+		return fmt.Errorf("Error saving certificates: %w", err)
 	}
 	return nil
 }
 
-func stringSliceEquals(a []string, b []string) bool {
-	if len(a) != len(b) {
+func domainsMatch(configDomains []string, certDomains []string) bool {
+	if len(configDomains) != len(certDomains) {
 		return false
 	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func contains(hs []string, n string) bool {
-	for _, v := range hs {
-		if v == n {
-			return true
-		}
-	}
-	return false
+	configCopy := slices.Clone(configDomains)
+	certCopy := slices.Clone(certDomains)
+	slices.Sort(configCopy)
+	slices.Sort(certCopy)
+	return slices.Equal(configCopy, certCopy)
 }
 
 const certFilesPerm = 0o600
@@ -349,18 +361,45 @@ func saveCertificates(basePath string, cert *certificate.Resource, domain string
 	keyTmpPath := keyPath + ".tmp"
 
 	if err := os.WriteFile(crtTmpPath, cert.Certificate, certFilesPerm); err != nil {
-		return fmt.Errorf("Unable to save server.crt for domain %s: %v", domain, err)
+		return fmt.Errorf("Unable to save server.crt for domain %s: %w", domain, err)
 	}
 	if err := os.Rename(crtTmpPath, crtPath); err != nil {
-		return fmt.Errorf("Unable to commit server.crt for domain %s: %v", domain, err)
+		return fmt.Errorf("Unable to commit server.crt for domain %s: %w", domain, err)
 	}
 
 	if err := os.WriteFile(keyTmpPath, cert.PrivateKey, certFilesPerm); err != nil {
-		return fmt.Errorf("Unable to save server.key for domain %s: %v", domain, err)
+		return fmt.Errorf("Unable to save server.key for domain %s: %w", domain, err)
 	}
 	if err := os.Rename(keyTmpPath, keyPath); err != nil {
-		return fmt.Errorf("Unable to commit server.key for domain %s: %v", domain, err)
+		return fmt.Errorf("Unable to commit server.key for domain %s: %w", domain, err)
 	}
 
 	return nil
+}
+
+func source(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "env:") {
+		envVar := strings.TrimPrefix(value, "env:")
+		val := os.Getenv(envVar)
+		if val == "" {
+			return "", fmt.Errorf("environment variable %q is empty or not set", envVar)
+		}
+		return strings.TrimSpace(val), nil
+	}
+	if strings.HasPrefix(value, "secret:") {
+		secretName := strings.TrimPrefix(value, "secret:")
+		root, err := os.OpenRoot("/run/secrets")
+		if err != nil {
+			return "", fmt.Errorf("failed to open secret directory: %w", err)
+		}
+		defer root.Close()
+		content, err := root.ReadFile(secretName)
+		if err != nil {
+			return "", fmt.Errorf("failed to read container secret %q: %w", secretName, err)
+		}
+
+		return strings.TrimSpace(string(content)), nil
+	}
+	return value, nil
 }

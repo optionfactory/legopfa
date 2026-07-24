@@ -10,7 +10,8 @@ The application is driven by a JSON configuration that maps to the internal `Con
 
 ### Supported Fields
 
-*   `key_type`: The cryptographic key type to use (`P256`, `P384`, `2048`, `4096`, `8192`).
+		
+*   `key_type`: The cryptographic key type to use (`EC256`, `EC384`, `RSA2048`, `RSA3072`, `RSA4096`, `RSA8192`).
 *   `email`: The email address registered with Let's Encrypt.
 *   `domains`: A list of domains to include in the certificate.
 *   `provider_type`: The challenge provider (`http`, `http_reverse_proxy`, `cloudflare`, `gandi`, `route53`).
@@ -25,6 +26,16 @@ The application is driven by a JSON configuration that maps to the internal `Con
     *   `dns_region`: AWS Route53 Region.
     *   `dns_hosted_zone_id`: *(Optional)* AWS Route53 Hosted Zone ID.
 
+### Credential Sourcing
+
+Fields like `dns_client_secret` and `dns_client_id` support basic prefixes so you don't have to keep raw keys in your config file:
+
+- `env:MY_VAR` – reads from process environment variables.
+- `secret:my_secret` – reads from mounted container secrets at `/run/secrets/my_secret`.
+- `my-raw-token` – used as-is if no prefix is specified.
+
+Leading and trailing whitespace is automatically trimmed.
+
 ---
 
 ## Example Usage
@@ -37,7 +48,7 @@ For Cloudflare, you must provide your API Token via the `dns_client_secret` fiel
 
 ```json
 {
-  "key_type": "P256",
+  "key_type": "EC256",
   "email": "admin@example.com",
   "domains": ["example.com", "*.example.com"],
   "provider_type": "cloudflare",
@@ -52,7 +63,7 @@ For Route53, you must provide your IAM credentials and region. The Hosted Zone I
 
 ```json
 {
-  "key_type": "2048",
+  "key_type": "RSA2048",
   "email": "admin@example.com",
   "domains": ["internal.example.com"],
   "provider_type": "route53",
@@ -69,7 +80,7 @@ For Route53, you must provide your IAM credentials and region. The Hosted Zone I
 
 ```json
 {
-  "key_type": "P256",
+  "key_type": "EC256",
   "email": "admin@example.com",
   "domains": ["example.com", "*.example.com"],
   "provider_type": "gandi",
@@ -84,7 +95,7 @@ If you are running `legopfa` behind a reverse proxy (like Nginx), use `http_reve
 
 ```json
 {
-  "key_type": "P384",
+  "key_type": "EC256",
   "email": "webmaster@example.com",
   "domains": ["app.example.com"],
   "provider_type": "http_reverse_proxy",
