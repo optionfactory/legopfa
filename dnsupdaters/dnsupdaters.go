@@ -115,23 +115,20 @@ func (self *Route53DnsUpdater) Update() error {
 		return err
 	}
 
-	// v2 replaces 'session' with a direct config object, and static credentials require the provider wrapper
 	config := aws.Config{
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(self.ClientId, self.ClientSecret, "")),
 		Region:      self.Region,
 		HTTPClient:  self.HttpClient,
 	}
 
-	// Create the route53 client directly from the config
 	route53Client := route53.NewFromConfig(config)
 
 	for _, record := range self.Records {
-		// API calls in v2 require a context.Context
 		_, err := route53Client.ChangeResourceRecordSets(context.Background(), &route53.ChangeResourceRecordSetsInput{
 			HostedZoneId: aws.String(self.HostedZoneId),
-			ChangeBatch: &types.ChangeBatch{ // Sub-structs have moved to the types subpackage
+			ChangeBatch: &types.ChangeBatch{
 				Changes: []types.Change{{
-					Action: types.ChangeActionUpsert, // Use typed enums rather than raw strings
+					Action: types.ChangeActionUpsert,
 					ResourceRecordSet: &types.ResourceRecordSet{
 						Name: aws.String(fmt.Sprintf("%s.%s", record.Domain, record.Name)),
 						Type: types.RRTypeA,

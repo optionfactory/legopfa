@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -160,7 +159,6 @@ func (self *CertManager) CreateAccount() (*LegoAccount, error) {
 		key:   key.(crypto.Signer),
 	}
 
-	// 'registration' now directly refers to the package, and 'reg' to the variable
 	regClient := registration.NewRegistrar(coreApi, accountWithoutRegistration)
 	reg, err := regClient.Register(context.Background(), registration.RegisterOptions{TermsOfServiceAgreed: true})
 	if err != nil {
@@ -168,7 +166,7 @@ func (self *CertManager) CreateAccount() (*LegoAccount, error) {
 	}
 	return &LegoAccount{
 		email:            self.Configuration.Email,
-		registrationInfo: reg, // Now correctly maps to *acme.ExtendedAccount
+		registrationInfo: reg,
 		key:              key.(crypto.Signer),
 	}, nil
 }
@@ -318,7 +316,7 @@ func loadCertificate(basePath string) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	bytes, err := ioutil.ReadFile(fp)
+	bytes, err := os.ReadFile(fp)
 	if err != nil {
 		return nil, err
 	}
