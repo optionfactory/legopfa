@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/optionfactory/legopfa/certmanager"
-	"github.com/optionfactory/legopfa/dnsupdaters"
 	"github.com/optionfactory/legopfa/httpserverhandlers"
 )
 
@@ -58,15 +57,6 @@ func main() {
 
 	isHttpServerRunning := httpServerHandler.IsRunning()
 	log.Printf("http server is running: %v", isHttpServerRunning)
-
-	if !isHttpServerRunning && len(configuration.DnsRecordsToUpdate) > 0 {
-		log.Printf("updating dns records: %v", configuration.DnsRecordsToUpdate)
-		err = dnsupdaters.FromConfiguration(configuration).Update()
-		if err != nil {
-			log.Fatalf("error: %v", err)
-		}
-		log.Printf("dns records updated")
-	}
 
 	account, err := cm.CreateAccount()
 	if err != nil {
