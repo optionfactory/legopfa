@@ -1,4 +1,4 @@
-package httpserverhandlers
+package main
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ type HttpServerHandler interface {
 	ServerName() string
 }
 
-func ByName(handlerName string) (HttpServerHandler, error) {
+func MakeServerHandler(handlerName string) (HttpServerHandler, error) {
 	switch handlerName {
 	case "nginx":
 		return &Nginx{}, nil

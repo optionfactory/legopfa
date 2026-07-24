@@ -6,9 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-
-	"github.com/optionfactory/legopfa/certmanager"
-	"github.com/optionfactory/legopfa/httpserverhandlers"
 )
 
 var version string
@@ -25,7 +22,7 @@ func main() {
 		log.Fatalf("usage: %s <configuration_path>", thisExecutableName)
 	}
 
-	configuration, err := loadJson[certmanager.Configuration](os.Args[1])
+	configuration, err := loadJson[Configuration](os.Args[1])
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
@@ -35,12 +32,12 @@ func main() {
 		return
 	}
 
-	cm, err := certmanager.MakeCertManager(configuration)
+	cm, err := MakeCertManager(configuration)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
 
-	httpServerHandler, err := httpserverhandlers.ByName(configuration.HttpServerHandler)
+	httpServerHandler, err := MakeServerHandler(configuration.HttpServerHandler)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}

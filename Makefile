@@ -3,14 +3,12 @@ REPO_OWNER=optionfactory
 REPO_NAME=legopfa
 
 build: 
-	@echo reformatting…
-	@gofmt -w=true -s=true *.go */*.go 
-	@echo vetting…
-	@CGO_ENABLED=0 go vet -ldflags "-X main.version=$(VERSION)" ./...
-	@echo building…
-	@CGO_ENABLED=0 go build -ldflags "-X main.version=$(VERSION)"
-	@echo stripping…
-	@strip legopfa
+	@echo reformatting
+	@gofmt -w=true -s=true *.go
+	@echo vetting
+	@CGO_ENABLED=0 go vet ./...
+	@echo building
+	@CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(VERSION)"
 
 clean:
 	rm -rf legopfa

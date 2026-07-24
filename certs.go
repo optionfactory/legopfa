@@ -1,4 +1,4 @@
-package certmanager
+package main
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/go-acme/lego/v5/acme"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-acme/lego/v5/certificate"
 	"github.com/go-acme/lego/v5/challenge/http01"
 	"github.com/go-acme/lego/v5/lego"
+	"github.com/go-acme/lego/v5/providers/dns/cloudflare"
 	"github.com/go-acme/lego/v5/providers/dns/gandiv5"
 	"github.com/go-acme/lego/v5/providers/dns/route53"
 	"github.com/go-acme/lego/v5/registration"
@@ -28,17 +30,18 @@ type DnsRecord struct {
 }
 
 type Configuration struct {
-	KeyType             certcrypto.KeyType `json:"key_type"`
-	Email               string             `json:"email"`
-	Domains             []string           `json:"domains"`
-	ProviderType        string             `json:"provider_type"`
-	HttpServerHandler   string             `json:"http_server_handler"`
-	HttpUpstramBindPort string             `json:"http_upstream_bind_port"`
-	DnsClientId         string             `json:"dns_client_id"`
-	DnsClientSecret     string             `json:"dns_client_secret"`
-	DnsRegion           string             `json:"dns_region"`
-	DnsHostedZoneId     string             `json:"dns_hosted_zone_id"`
-	StoragePath         string             `json:"storage_path"`
+	KeyType              certcrypto.KeyType `json:"key_type"`
+	Email                string             `json:"email"`
+	Domains              []string           `json:"domains"`
+	ProviderType         string             `json:"provider_type"`
+	HttpServerHandler    string             `json:"http_server_handler"`
+	HttpUpstreamBindPort string             `json:"http_upstream_bind_port"`
+	DnsClientId          string             `json:"dns_client_id"`
+	DnsClientSecret      string             `json:"dns_client_secret"`
+	DnsRegion            string             `json:"dns_region"`
+	DnsHostedZoneId      string             `json:"dns_hosted_zone_id"`
+	StoragePath          string             `json:"storage_path"`
+	AcmeDirectoryUrl     string             `json:"acme_directory_url"`
 }
 
 type LegoAccount struct {
@@ -104,21 +107,35 @@ func MakeCertManager(conf *Configuration) (*CertManager, error) {
 	if conf.ProviderType == "http_reverse_proxy" && conf.HttpServerHandler == "none" {
 		return nil, fmt.Errorf("http_server_handler must be provided when using the http_reverse_proxy provider_type")
 	}
+	if conf.HttpUpstreamBindPort != "" {
+		portInt, err := strconv.Atoi(conf.HttpUpstreamBindPort)
+		if err != nil || portInt < 1 || portInt > 65535 {
+			return nil, fmt.Errorf("invalid http_upstream_bind_port: must be a valid port number between 1 and 65535")
+		}
+	}
+	if conf.ProviderType == "cloudflare" {
+		if conf.DnsClientSecret == "" {
+			return nil, fmt.Errorf("dns_client_secret must be provided when using the cloudflare provider_type (containing the CLOUDFLARE_DNS_API_TOKEN)")
+		}
+	}
 	if conf.ProviderType == "gandi" {
 		if conf.DnsClientSecret == "" {
-			return nil, fmt.Errorf("dns_client_secret must be provided when using the gandi provider_type")
+			return nil, fmt.Errorf("dns_client_secret must be provided when using the gandi provider_type (containing the personal access token)")
 		}
 	}
 	if conf.ProviderType == "route53" {
 		if conf.DnsClientId == "" {
-			return nil, fmt.Errorf("dns_client_id must be provided when using the gandi provider_type")
+			return nil, fmt.Errorf("dns_client_id must be provided when using the route53 provider_type")
 		}
 		if conf.DnsClientSecret == "" {
-			return nil, fmt.Errorf("dns_client_secret must be provided when using the gandi provider_type")
+			return nil, fmt.Errorf("dns_client_secret must be provided when using the route53 provider_type")
 		}
 		if conf.DnsRegion == "" {
-			return nil, fmt.Errorf("dns_region must be provided when using the gandi provider_type")
+			return nil, fmt.Errorf("dns_region must be provided when using the route53 provider_type")
 		}
+	}
+	if conf.AcmeDirectoryUrl == "" {
+		conf.AcmeDirectoryUrl = "https://acme-v02.api.letsencrypt.org/directory"
 	}
 	cm := &CertManager{
 		Configuration: conf,
@@ -143,13 +160,13 @@ func (self *CertManager) CreateAccount() (*LegoAccount, error) {
 		},
 	}
 
-	coreApi, err := api.New(httpClient, useragent, "https://acme-v02.api.letsencrypt.org/directory", "", key.(crypto.Signer))
+	coreApi, err := api.New(httpClient, useragent, self.Configuration.AcmeDirectoryUrl, "", key)
 	if err != nil {
 		return nil, fmt.Errorf("Could not complete registration: %v", err)
 	}
 	accountWithoutRegistration := &LegoAccount{
 		email: self.Configuration.Email,
-		key:   key.(crypto.Signer),
+		key:   key,
 	}
 
 	regClient := registration.NewRegistrar(coreApi, accountWithoutRegistration)
@@ -160,7 +177,7 @@ func (self *CertManager) CreateAccount() (*LegoAccount, error) {
 	return &LegoAccount{
 		email:            self.Configuration.Email,
 		registrationInfo: reg,
-		key:              key.(crypto.Signer),
+		key:              key,
 	}, nil
 }
 
@@ -180,8 +197,8 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		port := "80"
 		bindAsUpstream := reverseProxyIsRunning && self.Configuration.ProviderType == "http_reverse_proxy"
 		if bindAsUpstream {
-			if self.Configuration.HttpUpstramBindPort != "" {
-				port = self.Configuration.HttpUpstramBindPort
+			if self.Configuration.HttpUpstreamBindPort != "" {
+				port = self.Configuration.HttpUpstreamBindPort
 			} else {
 				port = "8888"
 			}
@@ -193,20 +210,29 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		}
 		return client, nil
 	}
-	if self.Configuration.ProviderType == "route53" {
-		route53Config := &route53.Config{
-			AccessKeyID:        self.Configuration.DnsClientId,
-			SecretAccessKey:    self.Configuration.DnsClientSecret,
-			SessionToken:       "",
-			Region:             self.Configuration.DnsRegion,
-			HostedZoneID:       "",
-			MaxRetries:         5,
-			AssumeRoleArn:      "",
-			TTL:                10,
-			PropagationTimeout: 2 * time.Minute,
-			PollingInterval:    4 * time.Second,
-			Client:             nil,
+	if self.Configuration.ProviderType == "cloudflare" {
+		cloudConfig := cloudflare.NewDefaultConfig()
+		cloudConfig.AuthToken = self.Configuration.DnsClientSecret
+
+		provider, err := cloudflare.NewDNSProviderConfig(cloudConfig)
+		if err != nil {
+			return nil, err
 		}
+		err = client.Challenge.SetDNS01Provider(provider)
+		if err != nil {
+			return nil, err
+		}
+		return client, nil
+	}
+	if self.Configuration.ProviderType == "route53" {
+		route53Config := route53.NewDefaultConfig()
+		route53Config.AccessKeyID = self.Configuration.DnsClientId
+		route53Config.SecretAccessKey = self.Configuration.DnsClientSecret
+		route53Config.Region = self.Configuration.DnsRegion
+		if self.Configuration.DnsHostedZoneId != "" {
+			route53Config.HostedZoneID = self.Configuration.DnsHostedZoneId
+		}
+
 		provider, err := route53.NewDNSProviderConfig(route53Config)
 		if err != nil {
 			return nil, err
@@ -218,16 +244,8 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		return client, nil
 	}
 	if self.Configuration.ProviderType == "gandi" {
-		gandiConfig := &gandiv5.Config{
-			BaseURL:            "https://dns.api.gandi.net/api/v5",
-			APIKey:             self.Configuration.DnsClientSecret,
-			PropagationTimeout: 20 * time.Minute,
-			PollingInterval:    20 * time.Second,
-			HTTPClient: &http.Client{
-				Timeout: 10 * time.Second,
-			},
-			TTL: 300,
-		}
+		gandiConfig := gandiv5.NewDefaultConfig()
+		gandiConfig.PersonalAccessToken = self.Configuration.DnsClientSecret
 		provider, err := gandiv5.NewDNSProviderConfig(gandiConfig)
 		if err != nil {
 			return nil, err
@@ -258,6 +276,9 @@ func (self *CertManager) NeedsCreationOrRenewal() (bool, int, error) {
 }
 
 func (self *CertManager) CreateOrRenewCertificate(client *lego.Client) error {
+	if len(self.Configuration.Domains) == 0 {
+		return fmt.Errorf("no domains configured for certificate creation")
+	}
 	request := certificate.ObtainRequest{
 		Domains:                        self.Configuration.Domains,
 		Bundle:                         true,
@@ -321,13 +342,24 @@ func loadCertificate(basePath string) (*x509.Certificate, error) {
 }
 
 func saveCertificates(basePath string, cert *certificate.Resource, domain string) error {
-	err := os.WriteFile(filepath.Join(basePath, "server.crt"), cert.Certificate, certFilesPerm)
-	if err != nil {
+	crtPath := filepath.Join(basePath, "server.crt")
+	keyPath := filepath.Join(basePath, "server.key")
+	crtTmpPath := crtPath + ".tmp"
+	keyTmpPath := keyPath + ".tmp"
+
+	if err := os.WriteFile(crtTmpPath, cert.Certificate, certFilesPerm); err != nil {
 		return fmt.Errorf("Unable to save server.crt for domain %s: %v", domain, err)
 	}
-	err = os.WriteFile(filepath.Join(basePath, "server.key"), cert.PrivateKey, certFilesPerm)
-	if err != nil {
+	if err := os.Rename(crtTmpPath, crtPath); err != nil {
+		return fmt.Errorf("Unable to commit server.crt for domain %s: %v", domain, err)
+	}
+
+	if err := os.WriteFile(keyTmpPath, cert.PrivateKey, certFilesPerm); err != nil {
 		return fmt.Errorf("Unable to save server.key for domain %s: %v", domain, err)
 	}
+	if err := os.Rename(keyTmpPath, keyPath); err != nil {
+		return fmt.Errorf("Unable to commit server.key for domain %s: %v", domain, err)
+	}
+
 	return nil
 }
