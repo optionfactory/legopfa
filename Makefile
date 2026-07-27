@@ -8,7 +8,7 @@ build:
 	@echo vetting
 	@CGO_ENABLED=0 go vet ./...
 	@echo building
-	@CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(VERSION)"
+	@CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(VERSION)" -o target/$(REPO_NAME)-linux-amd64
 
 clean:
 	rm -rf legopfa
@@ -25,7 +25,7 @@ check-updates:
 
 publish-github: build
 	gh release create "v$(VERSION)" \
-		"legopfa#$(REPO_NAME)-linux-amd64" \
+		"target/$(REPO_NAME)-linux-amd64" \
 		--repo "$(REPO_OWNER)/$(REPO_NAME)" \
 		--title "v$(VERSION)" \
 		--target "master" \

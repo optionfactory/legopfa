@@ -1,5 +1,1 @@
-*.json
-*.crt
-*.key
-legopfa
-
+target/
