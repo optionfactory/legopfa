@@ -18,6 +18,7 @@ import (
 	"github.com/go-acme/lego/v5/acme/api"
 	"github.com/go-acme/lego/v5/certcrypto"
 	"github.com/go-acme/lego/v5/certificate"
+	"github.com/go-acme/lego/v5/challenge/dns01"
 	"github.com/go-acme/lego/v5/challenge/http01"
 	"github.com/go-acme/lego/v5/lego"
 	"github.com/go-acme/lego/v5/providers/dns/cloudflare"
@@ -39,6 +40,7 @@ type Configuration struct {
 	DnsHostedZoneId      string             `json:"dns_hosted_zone_id"`
 	StoragePath          string             `json:"storage_path"`
 	AcmeDirectoryUrl     string             `json:"acme_directory_url"`
+	DnsResolvers         []string           `json:"dns_resolvers"`
 }
 
 type LegoAccount struct {
@@ -232,7 +234,12 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		}
 		return client, nil
 	}
+
 	if self.Configuration.ProviderType == "cloudflare" {
+
+		opts := &dns01.Options{RecursiveNameservers: self.Configuration.DnsResolvers}
+		dns01.SetDefaultClient(dns01.NewClient(opts))
+
 		cloudConfig := cloudflare.NewDefaultConfig()
 		cloudConfig.AuthToken = self.Configuration.DnsClientSecret
 
@@ -247,6 +254,9 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		return client, nil
 	}
 	if self.Configuration.ProviderType == "route53" {
+		opts := &dns01.Options{RecursiveNameservers: self.Configuration.DnsResolvers}
+		dns01.SetDefaultClient(dns01.NewClient(opts))
+
 		route53Config := route53.NewDefaultConfig()
 		route53Config.AccessKeyID = self.Configuration.DnsClientId
 		route53Config.SecretAccessKey = self.Configuration.DnsClientSecret
@@ -266,6 +276,9 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		return client, nil
 	}
 	if self.Configuration.ProviderType == "gandi" {
+		opts := &dns01.Options{RecursiveNameservers: self.Configuration.DnsResolvers}
+		dns01.SetDefaultClient(dns01.NewClient(opts))
+
 		gandiConfig := gandiv5.NewDefaultConfig()
 		gandiConfig.PersonalAccessToken = self.Configuration.DnsClientSecret
 		provider, err := gandiv5.NewDNSProviderConfig(gandiConfig)
