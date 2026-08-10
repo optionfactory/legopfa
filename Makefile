@@ -2,17 +2,19 @@ VERSION=2.1
 REPO_OWNER=optionfactory
 REPO_NAME=legopfa
 
-build: 
-	@echo reformatting
-	@gofmt -w=true -s=true *.go
-	@echo vetting
-	@CGO_ENABLED=0 go vet ./...
-	@echo building
-	@CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(VERSION)" -o target/$(REPO_NAME)-linux-amd64
+build: bin/$(REPO_NAME)-linux-amd64
+
+bin/$(REPO_NAME)-linux-amd64: $(SRCS) go.mod
+	@mkdir -p bin
+	@echo "Formatting and vetting..."
+	@go fmt ./...
+	@go vet ./...
+	@echo "Building $(REPO_NAME)..."
+	@CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(VERSION)" -o bin/$(REPO_NAME)-linux-amd64 .
 
 clean:
-	rm -rf legopfa
-
+	@echo "Removing $(REPO_NAME)..."
+	@rm -rf bin/
 
 check-updates:
 	#go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -25,7 +27,7 @@ check-updates:
 
 publish-github: build
 	gh release create "v$(VERSION)" \
-		"target/$(REPO_NAME)-linux-amd64" \
+		"bin/$(REPO_NAME)-linux-amd64" \
 		--repo "$(REPO_OWNER)/$(REPO_NAME)" \
 		--title "v$(VERSION)" \
 		--target "master" \
