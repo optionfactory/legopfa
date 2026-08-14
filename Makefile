@@ -26,9 +26,12 @@ check-updates:
 
 
 publish-github: build
-	gh release create "v$(VERSION)" \
-		"bin/$(REPO_NAME)-linux-amd64" \
+	@cd target && sha256sum $(REPO_NAME)-linux-amd64 > SHA256SUMS
+	@gh release create "v$(VERSION)" \
+		"target/$(REPO_NAME)-linux-amd64" \
+		"target/SHA256SUMS" \
 		--repo "$(REPO_OWNER)/$(REPO_NAME)" \
 		--title "v$(VERSION)" \
 		--target "master" \
 		--notes ""
+	-@rm target/SHA256SUMS
