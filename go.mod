@@ -1,6 +1,6 @@
 module github.com/optionfactory/legopfa
 
-go 1.26.5
+go 1.26.6
 
 require github.com/go-acme/lego/v5 v5.3.1
 
