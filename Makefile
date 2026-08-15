@@ -1,4 +1,4 @@
-VERSION=2.1
+VERSION=2.2
 REPO_OWNER=optionfactory
 REPO_NAME=legopfa
 
