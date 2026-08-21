@@ -40,7 +40,6 @@ type Configuration struct {
 	DnsHostedZoneId      string             `json:"dns_hosted_zone_id"`
 	StoragePath          string             `json:"storage_path"`
 	AcmeDirectoryUrl     string             `json:"acme_directory_url"`
-	DnsResolvers         []string           `json:"dns_resolvers"`
 }
 
 type LegoAccount struct {
@@ -66,6 +65,12 @@ type CertManager struct {
 }
 
 const useragent string = "legopfa"
+
+var publicDnsResolvers = map[string][]string{
+	"cloudflare": {"1.1.1.1:53", "1.0.0.1:53"},
+	"route53":    {"8.8.8.8:53", "8.8.4.4:53"},
+	"gandi":      {"8.8.8.8:53", "8.8.4.4:53"},
+}
 
 func MakeCertManager(conf *Configuration) (*CertManager, error) {
 	supportedKeyTypes := []certcrypto.KeyType{
@@ -236,9 +241,7 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 	}
 
 	if self.Configuration.ProviderType == "cloudflare" {
-
-		opts := &dns01.Options{RecursiveNameservers: self.Configuration.DnsResolvers}
-		dns01.SetDefaultClient(dns01.NewClient(opts))
+		dns01.SetDefaultClient(dns01.NewClient(&dns01.Options{RecursiveNameservers: publicDnsResolvers["cloudflare"]}))
 
 		cloudConfig := cloudflare.NewDefaultConfig()
 		cloudConfig.AuthToken = self.Configuration.DnsClientSecret
@@ -247,15 +250,14 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		if err != nil {
 			return nil, err
 		}
-		err = client.Challenge.SetDNS01Provider(provider)
+		err = client.Challenge.SetDNS01Provider(provider, dns01.DisableRecursiveNSsPropagationRequirement())
 		if err != nil {
 			return nil, err
 		}
 		return client, nil
 	}
 	if self.Configuration.ProviderType == "route53" {
-		opts := &dns01.Options{RecursiveNameservers: self.Configuration.DnsResolvers}
-		dns01.SetDefaultClient(dns01.NewClient(opts))
+		dns01.SetDefaultClient(dns01.NewClient(&dns01.Options{RecursiveNameservers: publicDnsResolvers["route53"]}))
 
 		route53Config := route53.NewDefaultConfig()
 		route53Config.AccessKeyID = self.Configuration.DnsClientId
@@ -269,15 +271,14 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		if err != nil {
 			return nil, err
 		}
-		err = client.Challenge.SetDNS01Provider(provider)
+		err = client.Challenge.SetDNS01Provider(provider, dns01.DisableRecursiveNSsPropagationRequirement())
 		if err != nil {
 			return nil, err
 		}
 		return client, nil
 	}
 	if self.Configuration.ProviderType == "gandi" {
-		opts := &dns01.Options{RecursiveNameservers: self.Configuration.DnsResolvers}
-		dns01.SetDefaultClient(dns01.NewClient(opts))
+		dns01.SetDefaultClient(dns01.NewClient(&dns01.Options{RecursiveNameservers: publicDnsResolvers["gandi"]}))
 
 		gandiConfig := gandiv5.NewDefaultConfig()
 		gandiConfig.PersonalAccessToken = self.Configuration.DnsClientSecret
@@ -285,7 +286,7 @@ func (self *CertManager) CreateClient(account *LegoAccount, reverseProxyIsRunnin
 		if err != nil {
 			return nil, err
 		}
-		err = client.Challenge.SetDNS01Provider(provider)
+		err = client.Challenge.SetDNS01Provider(provider, dns01.DisableRecursiveNSsPropagationRequirement())
 		if err != nil {
 			return nil, err
 		}
