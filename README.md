@@ -26,6 +26,8 @@ The application is driven by a JSON configuration that maps to the internal `Con
     *   `dns_region`: AWS Route53 Region.
     *   `dns_hosted_zone_id`: *(Optional)* AWS Route53 Hosted Zone ID.
 
+DNS propagation is checked against the zone's authoritative nameservers directly (queried by IP), so it works even when the local resolver cannot see the TXT record. Bootstrap lookups use public resolvers (Cloudflare `1.1.1.1` for the `cloudflare` provider, Google `8.8.8.8` otherwise); outbound UDP/TCP port 53 to them must be allowed.
+
 ### Credential Sourcing
 
 Fields like `dns_client_secret` and `dns_client_id` support basic prefixes so you don't have to keep raw keys in your config file:
